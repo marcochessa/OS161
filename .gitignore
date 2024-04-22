@@ -1,0 +1,4 @@
+# Ignore the following folders to prevent pushing configuration files and tools
+.sockets/
+.vscode/
+tools/
