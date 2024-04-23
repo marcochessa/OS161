@@ -442,6 +442,11 @@ file		test/kmalloctest.c
 file		test/fstest.c
 optfile net	test/nettest.c
 
-# NEW PDS WORK LAB 1
+
+########################################
+#                                      #
+#              LAB1 TEST               #
+#                                      #
+########################################
 defoption hello
 optfile   hello    main/hello.c

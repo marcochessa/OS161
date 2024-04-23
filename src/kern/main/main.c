@@ -210,6 +210,9 @@ void
 kmain(char *arguments)
 {
 	boot();
+/*
+ * LAB 1
+ */
 
 #if OPT_HELLO
 	hello();
