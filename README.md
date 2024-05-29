@@ -1,167 +1,100 @@
-# LAB1
+﻿**PdS 2023 - Laboratorio OS161 - 4**
 
-## Build di OS161
+***Per affrontare questo laboratorio è necessario:*** 
 
-1. Assicurati di essere nella directory principale del progetto OS161.
+- ***aver svolto (e capito) i laboratori 2 e 3*** 
+- ***il laboratorio 2 serve per capite system call e (soprattutto) la chiusura di un processo*** 
+- ***il laboratorio 3 per poter realizzare la sincronizzazione.*** 
 
-2. Esegui il comando `sys161 kernel` per avviare la build del kernel.
+**Realizzare la system call waitpid (attesa fine processo)**
 
-3. Verifica che la build sia stata eseguita correttamente controllando la presenza dei file.
+Si vuole realizzare il supporto per la system call waitpid (in Unix/Linux esiste anche la wait, che attende un qualunque processo child), che permette a un processo di attendere il cambio di stato di un altro processo, di cui sia noto l’identificatore (pid).  
 
-4. In caso di errori durante la build, correggili e ripeti il processo.
+Si vedano ad esempio le documentazioni di waitpid su[ https://linux.die.net/man/2/waitpid ](https://linux.die.net/man/2/waitpid)o [https://www.freebsd.org/cgi/man.cgi?query=waitpid ](https://www.freebsd.org/cgi/man.cgi?query=waitpid)
 
-## Debugging
+Per semplicità, si chiede di gestire unicamente il cambiamento di stato a processo “terminato” (sarebbe necessario gestirne altri, quali wait/resume connessi a un signal). In sintesi, dopo thread\_exit (dell’ultimo/solo thread di un dato processo) un processo resta in stato “zombie” fintanto che un altro processo non fa una wait o waitpid (in OS161 solo waitpid), e ne ottiene quindi lo stato di uscita.  
 
-1. Per avviare OS161 in modalità debug, utilizza il comando da VSC `Run Task` dalla sezione Terminale.
+Il laboratorio può essere suddiviso in parti, che si consiglia di realizzare un pezzo alla volta, passando al successivo dopo aver messo a punto (compresa esecuzione/debug)  il precedente: 
 
-2. Durante il debug, utilizza gli shortcut da tastiera o i comandi `run state` oppure `F5` per avanzare nell'esecuzione.
+- Attesa della terminazione di un processo user, ritornandone lo stato di uscita 
+- Distruzione della struttura dati di un processo  (struct proc) 
+- Assegnazione di pid a processo, gestione della tabella dei processi e waitpid 
+- (opzionale) realizzare le system call getpid e fork  
 
-3. Assicurati che il debugger sia funzionante impostando un breakpoint sulla funzione chiamata `kmain` e utilizzando il comando `go` per continuare l'esecuzione.
+**Attesa di terminazione processo** 
 
-4. Utilizza la finestra del debugger per monitorare variabili, stack e breakpoint.
+Si consiglia di realizzare dapprima una funzione int proc\_wait(struct proc \*p), che gestisca *(senza bisogno di gestire pid e di supportare la system call waitpid)*, mediante semaforo o condition variable (aggiunti come campo alla struct proc), l’attesa della fine (con chiamata alla syscall \_exit())  di un altro processo, di cui si ha il puntatore alla relativa struct proc. 
 
-## Debugging Avanzato
+Si tratta quindi di una funzione del kernel, utilizzabile solo all’interno di questo (perché sfrutta il puntatore a struct proc). Tale funzione potrebbe essere realizzata in kern/proc/proc.c e provata (chiamata) all’interno di common\_prog, dopo che questa ha chiamato thread\_fork con successo, per aspettare la fine del processo attivato (e non tornare immediatamente al menu che richiederebbe subito un altro comando). La common\_prog potrebbe quindi aspettare la fine del processo child mediante  
 
-1. Se desideri avviare OS161 in modalità debug avanzata, esegui il comando `start debug`.
+exit\_code = proc\_wait(proc); 
 
-2. Durante il debug avanzato, potresti notare che, consultando main, troverai già indicazioni dettagliate sotto il titolo "step by step good".
+e stampare su console il codice di ritorno (quello ricevuto dalla \_exit - sys\_\_exit  e salvato nella struct proc) prima di ritornare al programma chiamante. La figura rappresenta lo schema delle chiamate e della sincronizzazione. Si noti che le chiamate a wait() e signal() vanno sostituite da opportune funzioni, che dipendono dalle scelte implementative fatte (semaforo, condition variable, funzione wrapper o chiamata diretta) 
 
-3. Nel processo di esecuzione, potresti incontrare un prompt che ti chiede conferma dopo aver eseguito determinate azioni.
+Kernel main thread  cmd\_progthread thread  (menu) ![](Aspose.Words.b30fc37c-fef2-4d26-92af-0db7bd5b376e.001.png)![ref1]![ref2] becomes 
 
-## Abilitazione e Disabilitazione delle Funzionalità
+userprocess (palin) 
 
-1. Per rendere facilmente disabilitabili alcune funzionalità nel codice, evita di utilizzare strategie basate su commenti e condizioni complesse.
 
-2. Invece, usa gli switch di compilazione come `#if` per abilitare o disabilitare parti del codice in base a determinati simboli.
 
-3. Assicurati di verificare che sia possibile disabilitare correttamente le funzionalità, testando il codice in diverse configurazioni.
+|<p>common\_prog(...) { ![](Aspose.Words.b30fc37c-fef2-4d26-92af-0db7bd5b376e.004.png)</p><p>`  `proc =[ proc_create_runprogram ](../../df/d03/proc_8h.html#aae835d06c28841caf3b0690c46012c28)(...); </p><p>`  `result =[ thread_fork(](../../d8/da9/include_2thread_8h.html#afcf81f11876cc2f4556b20c691c583ab)...,  </p><p>`    `proc,[ cmd_progthread,](../../d2/d0a/menu_8c.html#a3499a7a133dc64bf4abc25d460519436) ...); </p><p>`  `exit\_code = proc\_wait(proc);   ... </p><p>} </p>|||
+| - | :- | :- |
+|<p>proc\_wait(...) { </p><p>` `**wait(...);** /\* sem or cv \*/  /\* get exit status  </p><p>`    `and destroy userprocess    \*/</p>|||
 
-## Risoluzione dei Problemi
+|<p>/\* KERNEL MODE \*/ ![](Aspose.Words.b30fc37c-fef2-4d26-92af-0db7bd5b376e.005.png)cmd\_progthread(...) { </p><p>`  `result = runprogram(“testbin/palin”); }  </p><p>runprogram(...) { </p><p>`  `load\_elf(); </p><p>`  `enter\_new\_process(…); } </p>|||
+| :- | :- | :- |
+|<p>/\* USER MODE: proces main(...) { </p><p>`  `exit(0);</p>|s palin \*/ ||
+|<p>/\* KERNEL MODE: system call \*/ ![](Aspose.Words.b30fc37c-fef2-4d26-92af-0db7bd5b376e.006.png)syscall(...) { </p><p>`  `switch (callno) { </p><p>`    `sys\_\_exit(status);   } </p><p>` `}</p>|||
+| :- | :- | :- |
+|sys\_\_exit(...) { |||
+**Distruzione della struct proc**  ![](Aspose.Words.b30fc37c-fef2-4d26-92af-0db7bd5b376e.007.png)![](Aspose.Words.b30fc37c-fef2-4d26-92af-0db7bd5b376e.008.png)
 
-1. Durante lo sviluppo, potresti incontrare problemi come errori di accesso a disco.
+*ATTENZIONE: si ribadisce il consiglio di andare avanti un passo alla volta, realizzando la distruzione della struct proc solo dopo aver realizzato e verificato, eventualmente con debug, la correttezza della proc\_wait().* 
 
-2. Se incontri questo tipo di errore, potrebbe essere dovuto al fatto che hai avviato più istanze di OS161 contemporaneamente nella stessa directory.
+La struct proc di un processo non può essere distrutta (durante la \_exit) finchè un altro processo che chiami wait/waitpid non ne riceva la segnalazione (con lo stato di uscita). Tra le varie soluzioni possibili per liberare quindi una struct proc mediante la proc\_destroy, si consiglia di chiamare quest’ultima all’interno della proc\_wait, dopo l’attesa su semaforo o condition variable (cioè la struct non viene distrutta quando termina il processo ma all’interno di una proc\_wait, fatta da un altro processo, eventualmente il kernel).  
 
-3. Assicurati di non avere più di una sessione di OS161 attiva contemporaneamente nella stessa cartella per evitare conflitti e errori.
+Questo implica, probabilmente, una modifica alla realizzazione precedente della sys\_\_exit, che ora non necessiterebbe più di rilasciare l’address space, ma unicamente di segnalare (su semaforo o condition variable) la fine del processo, prima di chiamare thread\_exit. In altri termini, la sys\_\_exit termina il thread, non distrugge la struttura dati del processo, ma ne segnala semplicemente la terminazione. La distruzione completa di un processo viene effettuata dalla proc\_wait dopo che ne ha ricevuto la segnalazione di fine. La proc\_wait gestisce inoltre il ritorno dello stato di uscita del processo. 
 
-4. Presta attenzione ai simboli non definiti nel codice, poiché il compilatore potrebbe assumere automaticamente che siano falsi, disabilitando involontariamente alcune parti del codice.
+*ATTENZIONE: la funzione proc\_destroy() richiede che il processo che si sta distruggendo (struttura dati) non abbia più thread attivi (si veda il codice della proc destroy, che contiene  l’asserzione[ KASSERT(](../../de/d14/lib_8h.html#a8f0725c87f662db8a0f3ca04379da56f)proc-[>p_numthreads ](../../de/d48/structproc.html#a006b8c2e8e12e7d4d346bfb9a7cdb2dd)== 0);). Siccome la sys\_\_exit() segnala la fine del processo prima di chiamare thread\_exit(), è possibile che il kernel in attesa (nella common\_prog()) venga svegliato e chiami la proc\_destroy() prima che* 
 
-## Configurazione Avanzata
+*thread\_exit() “stacchi” il thread dal processo (si veda il codice della thread\_exit(), in particolare la chiamata a proc\_remthread()). La soluzione per evitare questa corsa critica (race) non è univoca. Si suggerisce, come possibile opzione, di chiamare la proc\_remthread() in modo esplicito nella sys\_\_exit(), “prima” di segnalare la fine del processo, e modificare la thread\_exit() in modo che accetti un thread già staccato dal processo (attenzione però a non OBBLIGARE la thread\_exit() a vedere SEMPRE un thread “staccato”: la thread\_exit() viene chiamata anche in altri contesti, fuori dalla sys\_\_exit()).* 
 
-1. Per abilitare o disabilitare simboli nel codice, evitando modifiche dirette ai file sorgente, utilizza il file di configurazione "conf.kern".
+**Assegnare pid** 
 
-2. Aggiungi o rimuovi simboli definendo o commentando le relative direttive `#define` nel file di configurazione. Esempio:
+La proc\_wait non realizza completamente il lavoro richiesto alla waitpid, in quanto parte da un puntatore a processo (invece che da un pid, un valore intero). 
 
-    ```makefile
-    # NEW PDS WORK LAB 1
-    defoption hello
-    optfile   hello    main/hello.c 
-    ```
+Per l’attribuzione di un pid (process id) a un processo, occorre tener conto che si tratta di un intero unico (tipo pid\_t), di valore compreso tra PID\_MIN e PID\_MAX (kern/include/limits.h), definiti in base a \_\_PID\_MIN e \_\_PID\_MAX (kern/include/kern/limits.h). Per l’attribuzione del pid e i passaggi da processo (puntatore a struct proc) a pid e viceversa, occorre realizzare una tabella. Per semplicità, si consiglia di realizzare un vettore di puntatori a struct proc, in cui l’indice corrisponda al pid (in tal caso si consiglia di utilizzare come pid massimo un numero accettabile, ad es. 100), oppure un vettore di coppie (pid, puntatore a processo). Un opportuno campo pid nella struct proc) può invece consentire reperire il pid a partire dal puntatore. Ogni nuovo processo creato va aggiunto alla tabella, generandone il pid, ogni processo distrutto va rimosso dalla tabella (una volta completata una wait/waitpid). La tabella può, ad esempio, essere realizzata come variabile globale in kern/proc/proc.c. Occorre poi realizzare una eventuale funzione sys\_waitpid da chiamare in syscall() (si consiglia di utilizzare lo stesso file, es. proc\_syscalls.c, già usato per la sys\_\_exit). 
 
-3. Assicurati di includere il file di configurazione corretto nei tuoi sorgenti per attivare o disattivare le funzionalità desiderate.
+**Tabella dei processi e waitpid** 
 
-# TEST
+La common\_prog, funzione interna al kernel, non ha bisogno di gestire il pid di un processo creato (ne ha già il puntatore), quindi non necessita, per attendere la fine del processo creato, del supporto per la waitpid (che richiede di gestire la tabella dei processi). In sostanza, la fine di un processo con \_exit (e system call sys\_\_exit) non necessita, se ad aspettare è il kernel che ne ha il puntatore, della waitpid (con processo identificato da pid), ma è sufficiente la proc\_wait (processo identificato da puntatore).  
 
-# Guida ai Test di OS161
+La waitpid invece è necessaria per gestione di processi da parte di programmi user. Ad esempio testbin/forktest premetterebbe di verificare il funzionamento di waitpid. Tuttavia, per il funzionamento di tale programma di test occorre realizzare la getpid, che ottiene il pid del processo corrente (puntato da curproc), e la fork, che permette di generare un processo child a livello user. *Questa parte (realizzare getpid e fork) può essere considerata opzionale (si consiglia di provare a realizzarla solo una volta completato con successo il resto del laboratorio): realizzare la getpid è semplice, la fork meno, in quanto si tratta di clonare (duplicare, l’intero address space di un processo (il child è una copia del padre) e di farlo partire correttamente).* 
 
-## Introduzione
+Un modo semplice per testare (senza bisogno della fork), non direttamente la waitpid, ma l’eventuale sys\_waitpid chiamata in syscall per supportarla, è di ottenere in common\_prog il pid del processo child (mediante sys\_getpid() o altra strategia), e successivamente attendere con sys\_waitpid  anziché proc\_wait.  
 
-In questa guida, esploreremo i test disponibili per OS161, un sistema operativo educativo. I test OS161 consentono di verificare il corretto funzionamento del sistema operativo e delle sue funzionalità.
+Si rappresenta, nella figura che segue, un possibile scenario per verificare la correttezza della catena getpid/waitpid e gestione della tabella dei processi, non direttamente, ma indirettamente tramite le funzioni sys\_getpid() e sys\_waitpid(). 
 
-## Tipi di Test
+Kernel main thread  cmd\_progthread thread  (menu) ![](Aspose.Words.b30fc37c-fef2-4d26-92af-0db7bd5b376e.009.png)![ref3]![ref2] becomes 
 
-I test di OS161 sono suddivisi in diverse categorie:
+userprocess (palin) 
 
-### Test del Kernel
 
-I test del kernel eseguono funzioni direttamente nel kernel di OS161, testando le sue operazioni di base. Ecco alcuni esempi di test del kernel:
 
-- `test1`: tt1
-- `test2`: tt2
-- `test3`: tt3
-- `test7`: tt7
+|<p>common\_prog(...) { ![](Aspose.Words.b30fc37c-fef2-4d26-92af-0db7bd5b376e.011.png)</p><p>`  `proc =[ proc_create_runprogram ](../../df/d03/proc_8h.html#aae835d06c28841caf3b0690c46012c28)(...); </p><p>`  `result =[ thread_fork(](../../d8/da9/include_2thread_8h.html#afcf81f11876cc2f4556b20c691c583ab)...,  </p><p>`    `proc,[ cmd_progthread,](../../d2/d0a/menu_8c.html#a3499a7a133dc64bf4abc25d460519436) ...); </p><p>`  `pid = sys\_getpid(proc);   </p><p>`  `exit\_code = sys\_waitpid(pid);   ... </p><p>} </p>|||
+| - | :- | :- |
+|<p>sys\_waitpid(...) { </p><p> ...  </p><p>` `return proc\_wait(...); </p><p>proc\_wait(...) { </p><p>` `wait(...); /\* sem or cv \*/ </p>|||
 
-### Test delle Operazioni del Kernel
+`  `/\* USER PROCESS \*/ ![](Aspose.Words.b30fc37c-fef2-4d26-92af-0db7bd5b376e.012.png)
 
-I test delle operazioni del kernel eseguono operazioni specifiche nel kernel e valutano il loro comportamento. Ad esempio:
+`  `exit(...); 
 
-- `opTest1`: Esegue operazioni nel kernel.
-- `opTest5`: Testa le operazioni di I/O.
 
-### Test dei Processi Utente
 
-I test dei processi utente eseguono programmi utente su OS161 e ne valutano il comportamento. Ad esempio:
+|<p>/\* KERNEL MODE: system call \*/ ![](Aspose.Words.b30fc37c-fef2-4d26-92af-0db7bd5b376e.013.png)syscall(...) { </p><p>}  </p>|
+| :- |
+|<p>sys\_\_exit(...) { ![](Aspose.Words.b30fc37c-fef2-4d26-92af-0db7bd5b376e.014.png)</p><p>` `signal(...); /\* sem or cv \*/  ... </p><p>` `thread\_exit(); </p><p>} </p>|
 
-- `userTest1`: Testa un programma utente di base.
-- `userTest55`: Testa un programma utente che produce output su console.
-
-## Esecuzione dei Test
-
-Per eseguire un test in OS161, seguire questi passaggi:
-
-1. Accedere alla directory del progetto OS161.
-2. Utilizzare il comando appropriato per eseguire il test desiderato. Ad esempio, per eseguire il test 3, utilizzare il comando `tt3`.
-
-## Analisi dei Risultati
-
-Dopo aver eseguito un test, analizzare attentamente i risultati per identificare eventuali errori o comportamenti anomali. Utilizzare gli strumenti di debug forniti da OS161 per individuare e risolvere i problemi.
-
-## Ulteriori Informazioni sui Test
-
-Per una comprensione più approfondita dei test di OS161, ecco alcune informazioni aggiuntive:
-
-- Quando si debugga un thread, è possibile mettere un breakpoint su di esso per intercettare il suo comportamento. Tuttavia, è importante disabilitare eventuali altri breakpoint per concentrarsi sul thread specifico.
-- Durante la programmazione concorrente, i thread possono alternarsi rapidamente, causando un ordine non deterministico delle stampe. Utilizzare gli strumenti di debug per analizzare il comportamento dei thread e identificare eventuali problemi.
-
-
-# ALTERNATIVA ALL'UTILIZZO DI RUN TASK SU TERMINAL DI VSC - LINEA DI COMANDO
-
-## Configurazione e Compilazione del Kernel OS161
-
-### Passaggio 1: Navigare alla Cartella di Configurazione
-
-1. Utilizzare il terminale o l'interprete dei comandi per accedere alla directory del kernel OS161.
-   ```bash
-   cd src/kern/conf
-   ```
-
-### Passaggio 2: Configurare il Kernel
-
-1. Eseguire il comando `./config` seguito dal nome desiderato per la versione del kernel. Ad esempio, se si desidera configurare una versione chiamata "HELLO", il comando sarà:
-   ```bash
-   ./config HELLO
-   ```
-
-### Passaggio 3: Compilare il Kernel
-
-1. Navigare alla directory relativa alla versione del kernel configurata. Questa directory apparirà in `src/kern/compile`.
-   ```bash
-   cd ../../compile/HELLO
-   ```
-
-2. Eseguire il comando `bmake depend` per gestire le dipendenze.
-   ```bash
-   bmake depend
-   ```
-
-3. Successivamente, eseguire il comando `bmake` per compilare il kernel.
-   ```bash
-   bmake
-   ```
-
-4. Infine, eseguire il comando `bmake install` per installare il kernel compilato.
-   ```bash
-   bmake install
-   ```
-
-### Passaggio 4: Eseguire il Kernel
-
-1. Risalire fino alla cartella principale del progetto OS161, ed entrare in `/root`.
-   ```bash
-   cd ../../../..
-   ```
-
-2. Una volta nella cartella principale, lanciare il kernel OS161 utilizzando il comando `sys161 kernel`.
-   ```bash
-   sys161 kernel
-   ```
+[ref1]: Aspose.Words.b30fc37c-fef2-4d26-92af-0db7bd5b376e.002.png
+[ref2]: Aspose.Words.b30fc37c-fef2-4d26-92af-0db7bd5b376e.003.png
+[ref3]: Aspose.Words.b30fc37c-fef2-4d26-92af-0db7bd5b376e.010.png

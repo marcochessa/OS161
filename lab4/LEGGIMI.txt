@@ -1,0 +1,3 @@
+Sono inclusi i file interessati alla gestione di pid/waitpid e sys__exit.
+Si propone amche una soluzione (incompleta e preliminare, seppur funzionante) 
+per fork (testbin/forktest richiede anche la getpid).
